@@ -62,12 +62,12 @@ Shader "Playdead/Post/TemporalReprojection"
 	uniform sampler2D _PrevTex;
 	uniform float4 _PrevTex_TexelSize;
 
-	sampler2D _DitherTex;
-	float4 _DitherTex_TexelSize;
+	uniform sampler2D _DitherTex;
+	uniform float4 _DitherTex_TexelSize;
 	uniform float4 _DitherOffset_local;
 
 	uniform float _FeedbackMin;
-	uniform float _FeedbackMax;
+	uniform float _FeedbackMinMax;
 	uniform float _MotionScale;
 
 	struct v2f
@@ -317,7 +317,7 @@ Shader "Playdead/Post/TemporalReprojection"
 		float unbiased_diff = abs(lum0 - lum1) / max(lum0, max(lum1, 0.2));
 		float unbiased_weight = 1.0 - unbiased_diff;
 		float unbiased_weight_sqr = unbiased_weight * unbiased_weight;
-		float k_feedback = lerp(_FeedbackMin, _FeedbackMax, unbiased_weight_sqr);
+		float k_feedback = _FeedbackMin + unbiased_weight_sqr * _FeedbackMinMax;
 
 		// output
 		return lerp(texel0, texel1, k_feedback);

@@ -19,7 +19,6 @@ public class TemporalReprojection : EffectBase
     private FrustumJitter _frustumJitter;
     private VelocityBuffer _velocityBuffer;
 
-    
     #region dithering
     public Texture ditherTex = null;
 
@@ -85,6 +84,19 @@ public class TemporalReprojection : EffectBase
 
     public float motionBlurStrength = 1.0f;
     public bool motionBlurIgnoreFF = false;
+
+    #region shaderparms
+    int jitter_id = -1; int JitterUVID() { if (jitter_id < 0) jitter_id = Shader.PropertyToID("_JitterUV"); return jitter_id; }
+    int vb_id =-1; int VelocityBufferID() { if (vb_id<0) vb_id=Shader.PropertyToID( "_VelocityBuffer" ); return vb_id; }
+    int vnm_id=-1; int VelocityNeighborMaxID() { if (vnm_id<0) vnm_id=Shader.PropertyToID( "_VelocityNeighborMax" ); return vnm_id; }
+    int maintex_id=-1; int MainTexID() { if (maintex_id<0) maintex_id=Shader.PropertyToID( "_MainTex" ); return maintex_id; }
+    int prevtex_id=-1; int PrevTexID() { if (prevtex_id<0) prevtex_id=Shader.PropertyToID( "_PrevTex" ); return prevtex_id; }
+    int fbmin_id=-1; int FeedbackMinID() { if (fbmin_id<0) fbmin_id=Shader.PropertyToID( "_FeedbackMin" ); return fbmin_id; }
+    int fbmax_id=-1; int FeedbackMinMaxID() { if (fbmax_id<0) fbmax_id=Shader.PropertyToID( "_FeedbackMinMax" ); return fbmax_id; }
+    int ms_id=-1; int MotionScaleID() { if (ms_id<0) ms_id=Shader.PropertyToID( "_MotionScale" ); return ms_id; }
+    int dithertex_id=-1; int DitherTexID() { if (dithertex_id<0) dithertex_id=Shader.PropertyToID( "_DitherTex" ); return dithertex_id; }
+    int ditherofslocal_id=-1; int DitherOffsetLocalID() { if (ditherofslocal_id<0) ditherofslocal_id=Shader.PropertyToID( "_DitherOffset_local" ); return ditherofslocal_id; }
+    #endregion
 
     void Reset()
     {
@@ -174,19 +186,18 @@ public class TemporalReprojection : EffectBase
         jitterUV.z /= source.width;
         jitterUV.w /= source.height;
 
-        reprojectionMaterial.SetVector("_JitterUV", jitterUV);
-        reprojectionMaterial.SetTexture("_VelocityBuffer", _velocityBuffer.activeVelocityBuffer);
-        reprojectionMaterial.SetTexture("_VelocityNeighborMax", _velocityBuffer.activeVelocityNeighborMax);
-        reprojectionMaterial.SetTexture("_MainTex", source);
-        reprojectionMaterial.SetTexture("_PrevTex", reprojectionBuffer[eyeIndex, indexRead]);
-        reprojectionMaterial.SetFloat("_FeedbackMin", feedbackMin);
-        reprojectionMaterial.SetFloat("_FeedbackMax", feedbackMax);
-        reprojectionMaterial.SetFloat("_MotionScale", motionBlurStrength * (motionBlurIgnoreFF ? Mathf.Min(1.0f, 1.0f / _velocityBuffer.timeScale) : 1.0f));
+        reprojectionMaterial.SetVector(JitterUVID(), jitterUV);
+        reprojectionMaterial.SetTexture(VelocityBufferID(), _velocityBuffer.activeVelocityBuffer);
+        reprojectionMaterial.SetTexture(VelocityNeighborMaxID(), _velocityBuffer.activeVelocityNeighborMax);
+        reprojectionMaterial.SetTexture(MainTexID(), source);
+        reprojectionMaterial.SetTexture(PrevTexID(), reprojectionBuffer[eyeIndex, indexRead]);
+        reprojectionMaterial.SetFloat(FeedbackMinID(), feedbackMin);
+        reprojectionMaterial.SetFloat(FeedbackMinMaxID(), feedbackMax - feedbackMin);
+        reprojectionMaterial.SetFloat(MotionScaleID(), motionBlurStrength * (motionBlurIgnoreFF ? Mathf.Min(1.0f, 1.0f / _velocityBuffer.timeScale) : 1.0f));
 
-        reprojectionMaterial.SetTexture("_DitherTex", ditherTex);
-
+        reprojectionMaterial.SetTexture(DitherTexID(), ditherTex);
         Vector4 ofs = GetFrame_DitherOffset();
-        reprojectionMaterial.SetVector( "_DitherOffset_local", GetFrame_DitherOffset() );
+        reprojectionMaterial.SetVector( DitherOffsetLocalID(), GetFrame_DitherOffset() );
 
         // reproject frame n-1 into output + history buffer
         {
