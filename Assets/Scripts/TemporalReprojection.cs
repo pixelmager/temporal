@@ -37,9 +37,10 @@ public class TemporalReprojection : EffectBase
     public bool unjitterReprojection = false;
     public bool useYCoCg = false;
     public bool useClipping = true;
+    public bool useApproximateClipping = true;
     public bool useDilation = true;
     public bool useMotionBlur = true;
-    public bool useOptimizations = true;
+    
 
     [Range(0.0f, 1.0f)] public float feedbackMin = 0.88f;
     [Range(0.0f, 1.0f)] public float feedbackMax = 0.97f;
@@ -117,7 +118,7 @@ public class TemporalReprojection : EffectBase
         EnsureKeyword(reprojectionMaterial, "USE_DILATION", useDilation);
         EnsureKeyword(reprojectionMaterial, "USE_MOTION_BLUR", useMotionBlur && allowMotionBlur);
         EnsureKeyword(reprojectionMaterial, "USE_MOTION_BLUR_NEIGHBORMAX", _velocityBuffer.activeVelocityNeighborMax != null);
-        EnsureKeyword(reprojectionMaterial, "USE_OPTIMIZATIONS", useOptimizations);
+        EnsureKeyword(reprojectionMaterial, "USE_APPROXIMATE_CLIPPING", useApproximateClipping);
 
         if (reprojectionIndex[eyeIndex] == -1)// bootstrap
         {
