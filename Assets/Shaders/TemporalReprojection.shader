@@ -195,6 +195,11 @@ Shader "Playdead/Post/TemporalReprojection"
 		return accu * RCP_NUM_TOTAL_TAPS_F;
 	}
 
+	float lengthsq( float2 v )
+	{
+		return dot(v,v);
+	}
+
 	float4 temporal_reprojection(float2 ss_txc, float2 ss_vel, float vs_dist)
 	{
 		// read texels
@@ -284,15 +289,19 @@ Shader "Playdead/Post/TemporalReprojection"
 		#error "missing keyword MINMAX_..."
 	#endif
 
-		//note: this seems to introduce noise
-		// shrink chroma min-max
-		//#if USE_CHROMA_COLORSPACE
-		//float2 chroma_extent = 0.25 * 0.5 * (cmax.r - cmin.r);
-		//float2 chroma_center = texel0.gb;
-		//cmin.yz = chroma_center - chroma_extent;
-		//cmax.yz = chroma_center + chroma_extent;
-		//cavg.yz = chroma_center;
-		//#endif
+		//note: shrink chroma min-max
+		#if USE_CHROMA_COLORSPACE
+		float2 chroma_extent = 0.25 * 0.5 * (cmax.x - cmin.x);
+		float2 chroma_center = texel0.yz;
+		float2 ccmin = chroma_center - chroma_extent;
+		float2 ccmax = chroma_center + chroma_extent;
+		if ( lengthsq(ccmax-ccmin) > lengthsq(cmax.yz-cmin.yz) )
+		{
+			cmin.yz = ccmin;
+			cmax.yz = ccmax;
+			cavg.yz = chroma_center;
+		}
+		#endif
 
 		// clamp to neighbourhood of current sample
 	#if USE_CLIPPING
