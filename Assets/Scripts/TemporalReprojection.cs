@@ -65,17 +65,37 @@ public class TemporalReprojection : EffectBase
     {
         MinMax3x3,
         MinMax3x3Rounded,
-        MinMax4TapVarying,
+        MinMax4TapVarying
+    };
+    public enum Dilation
+    {
+        None, Dilate5X, Dilate3X3
+    };
+    public enum HistoryColorBounds
+    {
+        Clamping, CenterClipping, Clipping /*, Variance*/
+    };
+    public enum ColorSpace
+    {
+        RGB, Chroma /*YCoCg, YCrCg?*/
     };
 
     public Neighborhood neighborhood = Neighborhood.MinMax3x3Rounded;
+
     public bool unjitterColorSamples = true;
     public bool unjitterNeighborhood = false;
     public bool unjitterReprojection = false;
-    public bool useYCoCg = false;
-    public bool useClipping = true;
-    public bool useApproximateClipping = true;
-    public bool useDilation = true;
+
+    [Tooltip("TAA colorspace. RGB is faster, Chroma is more better")]
+    public ColorSpace colorspace = ColorSpace.RGB;
+
+    [Tooltip("History color restricted by clamping (faster), centerClipping or clipping (better)")]
+    public HistoryColorBounds historyColorbounds = HistoryColorBounds.Clipping;
+
+    [Tooltip("use catmull-rom for historybuffer, soft-cubic for maincolor")]
+    public bool useHigherOrderFiltering = true;
+
+    public Dilation dilation = Dilation.Dilate3X3;
     public bool useMotionBlur = true;
     
 
@@ -157,18 +177,20 @@ public class TemporalReprojection : EffectBase
         EnsureKeyword(reprojectionMaterial, "CAMERA_PERSPECTIVE", !_camera.orthographic);
         EnsureKeyword(reprojectionMaterial, "CAMERA_ORTHOGRAPHIC", _camera.orthographic);
 
-        EnsureKeyword(reprojectionMaterial, "MINMAX_3X3", neighborhood == Neighborhood.MinMax3x3);
-        EnsureKeyword(reprojectionMaterial, "MINMAX_3X3_ROUNDED", neighborhood == Neighborhood.MinMax3x3Rounded);
-        EnsureKeyword(reprojectionMaterial, "MINMAX_4TAP_VARYING", neighborhood == Neighborhood.MinMax4TapVarying);
-        EnsureKeyword(reprojectionMaterial, "UNJITTER_COLORSAMPLES", unjitterColorSamples);
-        EnsureKeyword(reprojectionMaterial, "UNJITTER_NEIGHBORHOOD", unjitterNeighborhood);
-        EnsureKeyword(reprojectionMaterial, "UNJITTER_REPROJECTION", unjitterReprojection);
-        EnsureKeyword(reprojectionMaterial, "USE_YCOCG", useYCoCg);
-        EnsureKeyword(reprojectionMaterial, "USE_CLIPPING", useClipping);
-        EnsureKeyword(reprojectionMaterial, "USE_DILATION", useDilation);
+        //EnsureKeyword(reprojectionMaterial, "MINMAX_3X3", neighborhood == Neighborhood.MinMax3x3);
+        //EnsureKeyword(reprojectionMaterial, "MINMAX_3X3_ROUNDED", neighborhood == Neighborhood.MinMax3x3Rounded);
+        //EnsureKeyword(reprojectionMaterial, "MINMAX_4TAP_VARYING", neighborhood == Neighborhood.MinMax4TapVarying);
+        //EnsureKeyword(reprojectionMaterial, "UNJITTER_COLORSAMPLES", unjitterColorSamples);
+        //EnsureKeyword(reprojectionMaterial, "UNJITTER_NEIGHBORHOOD", unjitterNeighborhood);
+        //EnsureKeyword(reprojectionMaterial, "UNJITTER_REPROJECTION", unjitterReprojection);
+        EnsureKeyword(reprojectionMaterial, "USE_CHROMA_COLORSPACE", colorspace == ColorSpace.Chroma);
+        EnsureKeyword(reprojectionMaterial, "USE_CLIPPING", historyColorbounds == HistoryColorBounds.CenterClipping || historyColorbounds == HistoryColorBounds.Clipping );
+        EnsureKeyword(reprojectionMaterial, "USE_APPROXIMATE_CLIPPING", historyColorbounds == HistoryColorBounds.CenterClipping );
+        EnsureKeyword(reprojectionMaterial, "USE_DILATION_5X", dilation == Dilation.Dilate5X);
+        EnsureKeyword(reprojectionMaterial, "USE_DILATION_3X3", dilation == Dilation.Dilate3X3);
         EnsureKeyword(reprojectionMaterial, "USE_MOTION_BLUR", useMotionBlur && allowMotionBlur);
         EnsureKeyword(reprojectionMaterial, "USE_MOTION_BLUR_NEIGHBORMAX", _velocityBuffer.activeVelocityNeighborMax != null);
-        EnsureKeyword(reprojectionMaterial, "USE_APPROXIMATE_CLIPPING", useApproximateClipping);
+        EnsureKeyword(reprojectionMaterial, "USE_HIGHER_ORDER_TEXTURE_FILTERING", useHigherOrderFiltering);
 
         if (reprojectionIndex[eyeIndex] == -1)// bootstrap
         {

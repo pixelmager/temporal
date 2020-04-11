@@ -22,23 +22,34 @@ Shader "Playdead/Post/TemporalReprojection"
 	//#pragma multi_compile __ UNJITTER_COLORSAMPLES
 	//#pragma multi_compile __ UNJITTER_NEIGHBORHOOD
 	//#pragma multi_compile __ UNJITTER_REPROJECTION
-	//#pragma multi_compile __ USE_CHROMA_COLORSPACE
-	//#pragma multi_compile __ USE_CLIPPING
-	//#pragma multi_compile __ USE_DILATION
+	#pragma multi_compile __ USE_CHROMA_COLORSPACE
+	#pragma multi_compile __ USE_CLIPPING
+	#pragma multi_compile __ USE_APPROXIMATE_CLIPPING
+	#pragma multi_compile __ USE_DILATION_5X
+	#pragma multi_compile __ USE_DILATION_3X3
+	#pragma multi_compile __ USE_HIGHER_ORDER_TEXTURE_FILTERING
 	#pragma multi_compile __ USE_MOTION_BLUR
 	#pragma multi_compile __ USE_MOTION_BLUR_NEIGHBORMAX
-	//#pragma multi_compile __ USE_APPROXIMATE_CLIPPING
-
-	#define USE_DILATION 1
+	
 	#define MINMAX_3X3_ROUNDED 1
-	#define UNJITTER_COLORSAMPLES 1
-	#define USE_CHROMA_COLORSPACE 1
-	#define USE_CLIPPING 1
-	//#define APPROXIMATE_LUMINANCE_AS_GREEN 1
-	#define USE_HIGHER_ORDER_TEXTURE_FILTERING 1
 
 	//TODO: presets
-	// best perf: 5 tap nearest, RGB, clamping, green_is_luminance
+	/*
+	#if USE_HIGH_PERFORMANCE
+	// best perf: 5 tap nearest, RGB, minmaxrounded, clamping, green_is_luminance, low-motionblur-samples
+	#define USE_DILATION_5X 1
+	#define USE_APPROXIMATE_CLIPPING 1
+	#define APPROXIMATE_LUMINANCE_AS_GREEN 1
+	#endif
+
+	#if USE_HIGH_QUALITY
+	// best qual: 9 tap nearest, YCbCg, minmax, full clip, full lum, high-motionblur-samples
+	#define USE_DILATION_3X3 1
+	#define USE_CLIPPING 1
+	#define USE_CHROMA_COLORSPACE 1
+	#define USE_HIGHER_ORDER_TEXTURE_FILTERING 1
+	#endif
+	*/
 
 	#include "UnityCG.cginc"
 	#include "IncDepth.cginc"
@@ -58,6 +69,7 @@ Shader "Playdead/Post/TemporalReprojection"
 
 	uniform sampler2D_half _VelocityBuffer;
 	uniform sampler2D _VelocityNeighborMax;
+	uniform float4 _VelocityNeighborMax_TexelSize;
 
 	uniform sampler2D _PrevTex;
 	uniform float4 _PrevTex_TexelSize;
@@ -151,31 +163,7 @@ Shader "Playdead/Post/TemporalReprojection"
 	#endif
 	}
 
-	float2 sample_velocity_dilated(sampler2D tex, float2 uv, int support)
-	{
-		float2 du = float2(_MainTex_TexelSize.x, 0.0);
-		float2 dv = float2(0.0, _MainTex_TexelSize.y);
-		float2 mv = 0.0;
-		float rmv = 0.0;
-
-		int end = support + 1;
-		for (int i = -support; i != end; i++)
-		{
-			for (int j = -support; j != end; j++)
-			{
-				float2 v = tex2D(tex, uv + i * dv + j * du).xy;
-				float rv = dot(v, v);
-				if (rv > rmv)
-				{
-					mv = v;
-					rmv = rv;
-				}
-			}
-		}
-
-		return mv;
-	}
-
+	//TODO: option to toggle symmetric sampling
 	static const int NUM_TAPS = 3;// on either side!
 	static const float RCP_NUM_TAPS_F = 1.0f / float(NUM_TAPS);
 	static const float RCP_NUM_TOTAL_TAPS_F = 1.0f / float(2*NUM_TAPS+1);
@@ -206,12 +194,13 @@ Shader "Playdead/Post/TemporalReprojection"
 		#if UNJITTER_COLORSAMPLES
 		float2 cuv = ss_txc - _JitterUV.xy;
 		#else
-		float2 cuv = ss_txc
+		float2 cuv = ss_txc;
 		#endif
 
 		// read texels
 		#if USE_HIGHER_ORDER_TEXTURE_FILTERING
-		half4 texel0 = tex2D(_MainTex, cuv); //sample_cubic(_MainTex, cuv, _MainTex_TexelSize.zw);
+		//half4 texel0 = tex2D(_MainTex, cuv); //note: sharper, faster
+		half4 texel0 = sample_cubic(_MainTex, cuv, _MainTex_TexelSize.zw); //softer
 		half4 texel1 = sample_catmull_rom(_PrevTex, ss_txc - ss_vel, _PrevTex_TexelSize.zw);
 		#else
 		half4 texel0 = tex2D(_MainTex, cuv);
@@ -351,16 +340,12 @@ Shader "Playdead/Post/TemporalReprojection"
 		//note: RPDF blue-noise
 		half4 rnd = tex2Dlod( _DitherTex, float4( IN.ss_txc * IN.mad.xy + IN.mad.zw, 0, 0) );
 
-	#if USE_DILATION
-		//--- 3x3 norm (sucks)
-		//float2 ss_vel = sample_velocity_dilated(_VelocityBuffer, uv, 1);
-		//float vs_dist = depth_sample_linear(uv);
-
+	#if USE_DILATION_5X
 		//--- 5 tap nearest (decent)
-		//float3 c_frag = find_closest_fragment_5tap(uv);
-		//float2 ss_vel = tex2D(_VelocityBuffer, c_frag.xy).xy;
-		//float vs_dist = depth_resolve_linear(c_frag.z);
-
+		float3 c_frag = find_closest_fragment_5tap(uv);
+		float2 ss_vel = tex2D(_VelocityBuffer, c_frag.xy).xy;
+		float vs_dist = depth_resolve_linear(c_frag.z);
+	#elif USE_DILATION_3X3
 		//--- 3x3 nearest (good)
 		float3 c_frag = find_closest_fragment_3x3(uv);
 		float2 ss_vel = tex2D(_VelocityBuffer, c_frag.xy).xy;
@@ -375,10 +360,11 @@ Shader "Playdead/Post/TemporalReprojection"
 
 		// prepare outputs
 		float4 to_buffer = color_temporal;
-		
+
 	#if USE_MOTION_BLUR
 		#if USE_MOTION_BLUR_NEIGHBORMAX
-			ss_vel = _MotionScale * tex2D(_VelocityNeighborMax, IN.ss_txc).xy;
+			//ss_vel = _MotionScale * tex2D(_VelocityNeighborMax, IN.ss_txc).xy;
+			ss_vel = _MotionScale * sample_cubic(_VelocityNeighborMax, IN.ss_txc, _VelocityNeighborMax_TexelSize.zw).xy;
 		#else
 			ss_vel = _MotionScale * ss_vel;
 		#endif
