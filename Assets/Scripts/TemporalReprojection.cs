@@ -19,6 +19,44 @@ public class TemporalReprojection : EffectBase
     private FrustumJitter _frustumJitter;
     private VelocityBuffer _velocityBuffer;
 
+    
+    #region dithering
+    public Texture ditherTex = null;
+
+    private const int NUM_DITHEROFS = 1024;
+    const float DITHERSIZ = 256;
+    private static int frameofs = 0;
+    private static Vector4[] ditheroffsets = null;
+    public static Vector4 GetFrame_DitherOffset()
+    {
+        if ( ditheroffsets == null )
+            init_ditheroffsets();
+
+        frameofs = (frameofs+1) % NUM_DITHEROFS;
+        return ditheroffsets[frameofs];
+    }
+    private static void init_ditheroffsets()
+    {
+        if ( ditheroffsets != null )
+            return;
+
+        ditheroffsets = new Vector4[NUM_DITHEROFS];
+
+        for ( int i=0, n=ditheroffsets.Length; i<n; ++i )
+        {
+            Vector4 p = new Vector4( DITHERSIZ * FrustumJitter.HaltonSeq(2, i+1),
+                                     DITHERSIZ * FrustumJitter.HaltonSeq(3, i+1),
+                                     DITHERSIZ * FrustumJitter.HaltonSeq(5, i+1),
+                                     DITHERSIZ * FrustumJitter.HaltonSeq(7, i+1) );
+
+            ditheroffsets[i] = new Vector4( Mathf.Floor(p.x),
+                                            Mathf.Floor(p.y),
+                                            Mathf.Floor(p.z),
+                                            Mathf.Floor(p.w) );
+        }
+    }
+    #endregion
+
     public Shader reprojectionShader;
     private Material reprojectionMaterial;
     private RenderTexture[,] reprojectionBuffer;
@@ -144,6 +182,11 @@ public class TemporalReprojection : EffectBase
         reprojectionMaterial.SetFloat("_FeedbackMin", feedbackMin);
         reprojectionMaterial.SetFloat("_FeedbackMax", feedbackMax);
         reprojectionMaterial.SetFloat("_MotionScale", motionBlurStrength * (motionBlurIgnoreFF ? Mathf.Min(1.0f, 1.0f / _velocityBuffer.timeScale) : 1.0f));
+
+        reprojectionMaterial.SetTexture("_DitherTex", ditherTex);
+
+        Vector4 ofs = GetFrame_DitherOffset();
+        reprojectionMaterial.SetVector( "_DitherOffset_local", GetFrame_DitherOffset() );
 
         // reproject frame n-1 into output + history buffer
         {

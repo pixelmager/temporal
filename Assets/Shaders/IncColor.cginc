@@ -1,6 +1,19 @@
 #ifndef __PD_COLOR_CGINC__
 #define __PD_COLOR_CGINC__
 
+//note: Symmetric triangular distribution on [-1,1] with maximal density at 0
+//note: from https://github.com/Unity-Technologies/ScriptableRenderPipeline/blob/master/com.unity.render-pipelines.high-definition/Runtime/PostProcessing/Shaders/FinalPass.shader#L124
+float remap_noise_tri( float v )
+{
+    v = v*2.0-1.0;
+    return sign(v) * (1.0 - sqrt(1.0 - abs(v)));
+}
+float4 remap_noise_tri( float4 v )
+{
+    v = v*2.0-1.0;
+    return sign(v) * (1.0 - sqrt(1.0 - abs(v)));
+}
+
 //from https://github.com/h3r2tic/rtoy-samples/blob/master/assets/shaders/inc/color.inc
 // Rec. 709
 float3 RGB_YCbCr(float3 col)

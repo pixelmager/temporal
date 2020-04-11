@@ -111,7 +111,7 @@ public class FrustumJitter : MonoBehaviour
     }
 
     // http://en.wikipedia.org/wiki/Halton_sequence
-    private static float HaltonSeq(int prime, int index = 1/* NOT! zero-based */)
+    public static float HaltonSeq(int prime, int index = 1/* NOT! zero-based */)
     {
         float r = 0.0f;
         float f = 1.0f;

@@ -62,6 +62,10 @@ Shader "Playdead/Post/TemporalReprojection"
 	uniform sampler2D _PrevTex;
 	uniform float4 _PrevTex_TexelSize;
 
+	sampler2D _DitherTex;
+	float4 _DitherTex_TexelSize;
+	uniform float4 _DitherOffset_local;
+
 	uniform float _FeedbackMin;
 	uniform float _FeedbackMax;
 	uniform float _MotionScale;
@@ -70,6 +74,7 @@ Shader "Playdead/Post/TemporalReprojection"
 	{
 		float4 cs_pos : SV_POSITION;
 		float2 ss_txc : TEXCOORD0;
+		nointerpolation float4 mad : TEXCOORD1;
 	};
 
 	v2f vert(appdata_img IN)
@@ -86,6 +91,9 @@ Shader "Playdead/Post/TemporalReprojection"
 	#else
 		OUT.ss_txc = IN.texcoord.xy;
 	#endif
+
+		OUT.mad.xy = _PrevTex_TexelSize.zw * _DitherTex_TexelSize.xy;
+		OUT.mad.zw = _DitherOffset_local.xy * _DitherTex_TexelSize.xy;
 
 		return OUT;
 	}
@@ -168,28 +176,23 @@ Shader "Playdead/Post/TemporalReprojection"
 		return mv;
 	}
 
-	float4 sample_color_motion(sampler2D tex, float2 uv, float2 ss_vel)
+	static const int NUM_TAPS = 3;// on either side!
+	static const float RCP_NUM_TAPS_F = 1.0f / float(NUM_TAPS);
+	static const float RCP_NUM_TOTAL_TAPS_F = 1.0f / float(2*NUM_TAPS+1);
+	half4 sample_color_motion( float2 uv, float2 ss_vel, float srand )
 	{
 		const float2 v = 0.5 * ss_vel;
-		const int taps = 3;// on either side!
-
-		float srand = PDsrand(uv + _SinTime.xx);
-		float2 vtap = v / taps;
-		float2 pos0 = uv + vtap * (0.5 * srand);
-		float4 accu = 0.0;
-		float wsum = 0.0;
+		float2 vtap = v * RCP_NUM_TAPS_F;
+		float2 pos0 = uv + vtap * srand;
+		half4 accu = 0.0h;
 
 		[unroll]
-		for (int i = -taps; i <= taps; i++)
+		for (int i = -NUM_TAPS; i <= NUM_TAPS; i++)
 		{
-			float w = 1.0;// box
-			//float w = taps - abs(i) + 1;// triangle
-			//float w = 1.0 / (1 + abs(i));// pointy triangle
-			accu += w * to_working_colorspace(tex2D(tex, pos0 + i * vtap));
-			wsum += w;
+			accu += to_working_colorspace( tex2D(_MainTex, pos0 + i * vtap) );
 		}
 
-		return accu / wsum;
+		return accu * RCP_NUM_TOTAL_TAPS_F;
 	}
 
 	float4 temporal_reprojection(float2 ss_txc, float2 ss_vel, float vs_dist)
@@ -336,9 +339,8 @@ Shader "Playdead/Post/TemporalReprojection"
 		float2 uv = IN.ss_txc;
 	#endif
 
-		//TODO
 		//note: RPDF blue-noise
-		//half4 rnd = tex2Dlod( _DitherTex, float4( IN.ss_txc * IN.mad.xy + IN.mad.zw, 0, 0) );
+		half4 rnd = tex2Dlod( _DitherTex, float4( IN.ss_txc * IN.mad.xy + IN.mad.zw, 0, 0) );
 
 	#if USE_DILATION
 		//--- 3x3 norm (sucks)
@@ -379,9 +381,11 @@ Shader "Playdead/Post/TemporalReprojection"
 		float trust = 1.0 - clamp(vel_mag - vel_trust_full, 0.0, vel_trust_span) / vel_trust_span;
 
 		#if UNJITTER_COLORSAMPLES
-			float4 color_motion = sample_color_motion(_MainTex, IN.ss_txc - _JitterUV.xy, ss_vel);
+			half4 color_motion = sample_color_motion( IN.ss_txc - _JitterUV.xy, ss_vel, rnd.xy-0.5h);
+			//float4 color_motion = sample_color_motion(_MainTex, IN.ss_txc - _JitterUV.xy, ss_vel);
 		#else
-			float4 color_motion = sample_color_motion(_MainTex, IN.ss_txc, ss_vel);
+			//float4 color_motion = sample_color_motion(_MainTex, IN.ss_txc, ss_vel);
+			half4 color_motion = sample_color_motion( IN.ss_txc, ss_vel, rnd.xy-0.5h);
 		#endif
 
 		float4 to_screen = lerp(color_motion, color_temporal, trust);
@@ -392,16 +396,15 @@ Shader "Playdead/Post/TemporalReprojection"
 		to_buffer = from_working_colorspace( to_buffer );
 		to_screen = from_working_colorspace( to_screen );
 
-		//// NOTE: velocity debug
+		//note: velocity debug
 		//to_screen.g += 100.0 * length(ss_vel);
 		//to_screen = float4(100.0 * abs(ss_vel), 0.0, 0.0);
 
-		// add noise
-		float4 noise4 = PDsrand4(IN.ss_txc + _SinTime.x + 0.6959174) / 510.0;
-		OUT.buffer = saturate(to_buffer + noise4);
-		OUT.screen = saturate(to_screen + noise4);
+		// dither color-output
+		float4 noise4_tri = remap_noise_tri( rnd ) / 255.0;
+		OUT.buffer = saturate(to_buffer + noise4_tri);
+		OUT.screen = saturate(to_screen + noise4_tri);
 
-		// done
 		return OUT;
 	}
 
