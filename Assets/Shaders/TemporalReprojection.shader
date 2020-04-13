@@ -1,6 +1,4 @@
-﻿
-// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
-// Copyright (c) <2015> <Playdead>
+﻿// Copyright (c) <2015> <Playdead>
 // This file is subject to the MIT License as seen in the root of this folder structure (LICENSE.TXT)
 // AUTHOR: Lasse Jon Fuglsang Pedersen <lasse@playdead.com>
 
@@ -27,7 +25,8 @@ Shader "Playdead/Post/TemporalReprojection"
 	#pragma multi_compile __ USE_APPROXIMATE_CLIPPING
 	#pragma multi_compile __ USE_DILATION_5X
 	#pragma multi_compile __ USE_DILATION_3X3
-	#pragma multi_compile __ USE_HIGHER_ORDER_TEXTURE_FILTERING
+	#pragma multi_compile __ USE_HIGHER_ORDER_TEXTURE_FILTERING_COLOR
+	#pragma multi_compile __ USE_HIGHER_ORDER_TEXTURE_FILTERING_HISTORY
 	#pragma multi_compile __ USE_MOTION_BLUR
 	#pragma multi_compile __ USE_MOTION_BLUR_NEIGHBORMAX
 	
@@ -47,7 +46,8 @@ Shader "Playdead/Post/TemporalReprojection"
 	#define USE_DILATION_3X3 1
 	#define USE_CLIPPING 1
 	#define USE_CHROMA_COLORSPACE 1
-	#define USE_HIGHER_ORDER_TEXTURE_FILTERING 1
+	#define USE_HIGHER_ORDER_TEXTURE_FILTERING_COLOR 1
+	#define USE_HIGHER_ORDER_TEXTURE_FILTERING_HISTORY 1
 	#endif
 	*/
 
@@ -198,12 +198,15 @@ Shader "Playdead/Post/TemporalReprojection"
 		#endif
 
 		// read texels
-		#if USE_HIGHER_ORDER_TEXTURE_FILTERING
-		//half4 texel0 = tex2D(_MainTex, cuv); //note: sharper, faster
+		#if USE_HIGHER_ORDER_TEXTURE_FILTERING_COLOR
 		half4 texel0 = sample_cubic(_MainTex, cuv, _MainTex_TexelSize.zw); //softer
+		#else
+		half4 texel0 = tex2D(_MainTex, cuv); //note: sharper, faster
+		#endif
+
+		#if USE_HIGHER_ORDER_TEXTURE_FILTERING_HISTORY
 		half4 texel1 = sample_catmull_rom(_PrevTex, ss_txc - ss_vel, _PrevTex_TexelSize.zw);
 		#else
-		half4 texel0 = tex2D(_MainTex, cuv);
 		half4 texel1 = tex2D(_PrevTex, ss_txc - ss_vel);
 		#endif
 		texel0 = to_working_colorspace( texel0 );

@@ -92,8 +92,11 @@ public class TemporalReprojection : EffectBase
     [Tooltip("History color restricted by clamping (faster), centerClipping or clipping (better)")]
     public HistoryColorBounds historyColorbounds = HistoryColorBounds.Clipping;
 
-    [Tooltip("use catmull-rom for historybuffer, soft-cubic for maincolor")]
-    public bool useHigherOrderFiltering = true;
+    [Tooltip("use soft-cubic for sampling maincolor")]
+    public bool useHigherOrderFilteringMainColor = false;
+
+    [Tooltip("use catmull-rom for sampling historybuffer")]
+    public bool useHigherOrderFilteringHistory = true;
 
     public Dilation dilation = Dilation.Dilate3X3;
     public bool useMotionBlur = true;
@@ -190,7 +193,8 @@ public class TemporalReprojection : EffectBase
         EnsureKeyword(reprojectionMaterial, "USE_DILATION_3X3", dilation == Dilation.Dilate3X3);
         EnsureKeyword(reprojectionMaterial, "USE_MOTION_BLUR", useMotionBlur && allowMotionBlur);
         EnsureKeyword(reprojectionMaterial, "USE_MOTION_BLUR_NEIGHBORMAX", _velocityBuffer.activeVelocityNeighborMax != null);
-        EnsureKeyword(reprojectionMaterial, "USE_HIGHER_ORDER_TEXTURE_FILTERING", useHigherOrderFiltering);
+        EnsureKeyword(reprojectionMaterial, "USE_HIGHER_ORDER_TEXTURE_FILTERING_COLOR", useHigherOrderFilteringMainColor);
+        EnsureKeyword(reprojectionMaterial, "USE_HIGHER_ORDER_TEXTURE_FILTERING_HISTORY", useHigherOrderFilteringHistory);
 
         if (reprojectionIndex[eyeIndex] == -1)// bootstrap
         {
