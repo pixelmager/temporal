@@ -108,4 +108,23 @@ public abstract class EffectBase : MonoBehaviour
         GL.End();
         GL.PopMatrix();
     }
+
+    public void DrawFullscreenTri()
+    {
+        GL.PushMatrix();
+        GL.LoadOrtho();
+        GL.Begin(GL.TRIANGLES);
+        {
+            GL.MultiTexCoord2(0, 0.0f, 0.0f);
+            GL.Vertex3(0.0f, 0.0f, 0.0f);
+
+            GL.MultiTexCoord2(0, 2.0f, 0.0f);
+            GL.Vertex3(2.0f, 0.0f, 0.0f);
+
+            GL.MultiTexCoord2(0, 0.0f, 2.0f);
+            GL.Vertex3(0.0f, 2.0f, 0.0f);
+        }
+        GL.End();
+        GL.PopMatrix();
+    }
 }

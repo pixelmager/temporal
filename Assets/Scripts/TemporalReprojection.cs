@@ -61,36 +61,25 @@ public class TemporalReprojection : EffectBase
     private RenderTexture[,] reprojectionBuffer;
     private int[] reprojectionIndex = new int[2] { -1, -1 };
 
-    public enum Neighborhood
-    {
-        MinMax3x3,
-        MinMax3x3Rounded,
-        MinMax4TapVarying
-    };
     public enum Dilation
     {
         None, Dilate5X, Dilate3X3
     };
-    public enum HistoryColorBounds
+    public enum HistoryRectification
     {
-        Clamping, CenterClipping, Clipping /*, Variance*/
+        Clamping, CenterClipping, Clipping
     };
     public enum ColorSpace
     {
         RGB, Chroma /*YCoCg, YCrCg?*/
     };
 
-    public Neighborhood neighborhood = Neighborhood.MinMax3x3Rounded;
-
-    public bool unjitterColorSamples = true;
-    public bool unjitterNeighborhood = false;
-    public bool unjitterReprojection = false;
+    //public bool unjitterColorSamples = true;
+    //public bool unjitterNeighborhood = false;
+    //public bool unjitterReprojection = false;
 
     [Tooltip("TAA colorspace. RGB is faster, Chroma is more better")]
     public ColorSpace colorspace = ColorSpace.RGB;
-
-    [Tooltip("History color restricted by clamping (faster), centerClipping or clipping (better)")]
-    public HistoryColorBounds historyColorbounds = HistoryColorBounds.Clipping;
 
     [Tooltip("use soft-cubic for sampling maincolor")]
     public bool useHigherOrderFilteringMainColor = false;
@@ -98,9 +87,17 @@ public class TemporalReprojection : EffectBase
     [Tooltip("use catmull-rom for sampling historybuffer")]
     public bool useHigherOrderFilteringHistory = true;
 
+    [Tooltip("History color restricted by clamping (faster), centerClipping or clipping (better)")]
+    public HistoryRectification historyRectification = HistoryRectification.Clamping;
+
+    [Tooltip("Shrink color-aabb using variance of neighborhood")]
+    public bool useVarianceClipping = true;
+
+    [Tooltip("Smooth color-aabb using rounding")]
+    public bool useAABBRounding = true;
+
     public Dilation dilation = Dilation.Dilate3X3;
     public bool useMotionBlur = true;
-    
 
     [Range(0.0f, 1.0f)] public float feedbackMin = 0.88f;
     [Range(0.0f, 1.0f)] public float feedbackMax = 0.97f;
@@ -179,16 +176,14 @@ public class TemporalReprojection : EffectBase
 
         EnsureKeyword(reprojectionMaterial, "CAMERA_PERSPECTIVE", !_camera.orthographic);
         EnsureKeyword(reprojectionMaterial, "CAMERA_ORTHOGRAPHIC", _camera.orthographic);
-
-        //EnsureKeyword(reprojectionMaterial, "MINMAX_3X3", neighborhood == Neighborhood.MinMax3x3);
-        //EnsureKeyword(reprojectionMaterial, "MINMAX_3X3_ROUNDED", neighborhood == Neighborhood.MinMax3x3Rounded);
-        //EnsureKeyword(reprojectionMaterial, "MINMAX_4TAP_VARYING", neighborhood == Neighborhood.MinMax4TapVarying);
         //EnsureKeyword(reprojectionMaterial, "UNJITTER_COLORSAMPLES", unjitterColorSamples);
         //EnsureKeyword(reprojectionMaterial, "UNJITTER_NEIGHBORHOOD", unjitterNeighborhood);
         //EnsureKeyword(reprojectionMaterial, "UNJITTER_REPROJECTION", unjitterReprojection);
         EnsureKeyword(reprojectionMaterial, "USE_CHROMA_COLORSPACE", colorspace == ColorSpace.Chroma);
-        EnsureKeyword(reprojectionMaterial, "USE_CLIPPING", historyColorbounds == HistoryColorBounds.CenterClipping || historyColorbounds == HistoryColorBounds.Clipping );
-        EnsureKeyword(reprojectionMaterial, "USE_APPROXIMATE_CLIPPING", historyColorbounds == HistoryColorBounds.CenterClipping );
+        EnsureKeyword(reprojectionMaterial, "USE_CLIPPING", historyRectification == HistoryRectification.CenterClipping || historyRectification == HistoryRectification.Clipping );
+        EnsureKeyword(reprojectionMaterial, "USE_CENTER_CLIPPING", historyRectification == HistoryRectification.CenterClipping );
+        EnsureKeyword(reprojectionMaterial, "USE_VARIANCE_CLIPPING", useVarianceClipping );
+        EnsureKeyword(reprojectionMaterial, "USE_AABB_ROUNDING", useAABBRounding );
         EnsureKeyword(reprojectionMaterial, "USE_DILATION_5X", dilation == Dilation.Dilate5X);
         EnsureKeyword(reprojectionMaterial, "USE_DILATION_3X3", dilation == Dilation.Dilate3X3);
         EnsureKeyword(reprojectionMaterial, "USE_MOTION_BLUR", useMotionBlur && allowMotionBlur);
@@ -234,7 +229,8 @@ public class TemporalReprojection : EffectBase
             reprojectionMaterial.SetPass(0);
             reprojectionBuffer[eyeIndex, indexWrite].DiscardContents();
 
-            DrawFullscreenQuad();
+            //DrawFullscreenQuad();
+            DrawFullscreenTri();
 
             reprojectionIndex[eyeIndex] = indexWrite;
         }

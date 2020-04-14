@@ -16,28 +16,31 @@ Shader "Playdead/Post/TemporalReprojection"
 	#pragma target 3.0
 
 	#pragma multi_compile CAMERA_PERSPECTIVE CAMERA_ORTHOGRAPHIC
-	//#pragma multi_compile MINMAX_3X3 MINMAX_3X3_ROUNDED MINMAX_4TAP_VARYING
 	//#pragma multi_compile __ UNJITTER_COLORSAMPLES
 	//#pragma multi_compile __ UNJITTER_NEIGHBORHOOD
 	//#pragma multi_compile __ UNJITTER_REPROJECTION
+	#pragma multi_compile __ USE_AABB_ROUNDING
 	#pragma multi_compile __ USE_CHROMA_COLORSPACE
 	#pragma multi_compile __ USE_CLIPPING
-	#pragma multi_compile __ USE_APPROXIMATE_CLIPPING
+	#pragma multi_compile __ USE_VARIANCE_CLIPPING
+	#pragma multi_compile __ USE_CENTER_CLIPPING
 	#pragma multi_compile __ USE_DILATION_5X
 	#pragma multi_compile __ USE_DILATION_3X3
 	#pragma multi_compile __ USE_HIGHER_ORDER_TEXTURE_FILTERING_COLOR
 	#pragma multi_compile __ USE_HIGHER_ORDER_TEXTURE_FILTERING_HISTORY
 	#pragma multi_compile __ USE_MOTION_BLUR
 	#pragma multi_compile __ USE_MOTION_BLUR_NEIGHBORMAX
-	
-	#define MINMAX_3X3_ROUNDED 1
+
+	#define UNJITTER_COLORSAMPLES 1
+	#define UNJITTER_NEIGHBORHOOD 0
+	#define UNJITTER_REPROJECTION 0
 
 	//TODO: presets
 	/*
 	#if USE_HIGH_PERFORMANCE
 	// best perf: 5 tap nearest, RGB, minmaxrounded, clamping, green_is_luminance, low-motionblur-samples
 	#define USE_DILATION_5X 1
-	#define USE_APPROXIMATE_CLIPPING 1
+	#define USE_CENTER_CLIPPING 1
 	#define APPROXIMATE_LUMINANCE_AS_GREEN 1
 	#endif
 
@@ -131,7 +134,7 @@ Shader "Playdead/Post/TemporalReprojection"
 
 	float4 clip_aabb(float3 aabb_min, float3 aabb_max, float4 p, float4 q)
 	{
-	#if USE_APPROXIMATE_CLIPPING
+	#if USE_CENTER_CLIPPING
 		// note: only clips towards aabb center (but fast!)
 		float3 p_clip = 0.5 * (aabb_max + aabb_min);
 		float3 e_clip = 0.5 * (aabb_max - aabb_min) + FLT_EPS;
@@ -203,13 +206,13 @@ Shader "Playdead/Post/TemporalReprojection"
 		#else
 		half4 texel0 = tex2D(_MainTex, cuv); //note: sharper, faster
 		#endif
+		texel0 = to_working_colorspace( texel0 );
 
 		#if USE_HIGHER_ORDER_TEXTURE_FILTERING_HISTORY
 		half4 texel1 = sample_catmull_rom(_PrevTex, ss_txc - ss_vel, _PrevTex_TexelSize.zw);
 		#else
 		half4 texel1 = tex2D(_PrevTex, ss_txc - ss_vel);
 		#endif
-		texel0 = to_working_colorspace( texel0 );
 		texel1 = to_working_colorspace( texel1 );
 
 		// calc min-max of current neighbourhood
@@ -219,11 +222,8 @@ Shader "Playdead/Post/TemporalReprojection"
 		float2 uv = ss_txc;
 	#endif
 
-	#if MINMAX_3X3 || MINMAX_3X3_ROUNDED
-
 		float2 du = float2(_MainTex_TexelSize.x, 0.0);
 		float2 dv = float2(0.0, _MainTex_TexelSize.y);
-
 		float4 ctl = to_working_colorspace( tex2D(_MainTex, uv - dv - du) );
 		float4 ctc = to_working_colorspace( tex2D(_MainTex, uv - dv) );
 		float4 ctr = to_working_colorspace( tex2D(_MainTex, uv - dv + du) );
@@ -241,49 +241,47 @@ Shader "Playdead/Post/TemporalReprojection"
 		float4 cmin = min(cmin5, min(ctl, min(ctr, min(cbl, cbr))));
 		float4 cmax = max(cmax5, max(ctl, max(ctr, max(cbl, cbr))));
 
-		#if MINMAX_3X3_ROUNDED || USE_CHROMA_COLORSPACE || USE_CLIPPING
-			float4 cavg = (csum5 + ctl + ctr + cbl + cbr) / 9.0;
-		#endif
-
-		#if MINMAX_3X3_ROUNDED
-			float4 cavg5 = csum5 * 0.1;
-			cmin = 0.5 * (cmin + cmin5);
-			cmax = 0.5 * (cmax + cmax5);
-			cavg = 0.5 * cavg + cavg5;
-		#endif
-
-	#elif MINMAX_4TAP_VARYING// this is the method used in v2 (PDTemporalReprojection2)
-
-		const float _SubpixelThreshold = 0.5;
-		const float _GatherBase = 0.5;
-		const float _GatherSubpixelMotion = 0.1666;
-
-		float2 texel_vel = ss_vel / _MainTex_TexelSize.xy;
-		float texel_vel_mag = length(texel_vel) * vs_dist;
-		float k_subpixel_motion = saturate(_SubpixelThreshold / (FLT_EPS + texel_vel_mag));
-		float k_min_max_support = _GatherBase + _GatherSubpixelMotion * k_subpixel_motion;
-
-		float2 ss_offset01 = k_min_max_support * float2(-_MainTex_TexelSize.x, _MainTex_TexelSize.y);
-		float2 ss_offset11 = k_min_max_support * float2(_MainTex_TexelSize.x, _MainTex_TexelSize.y);
-		float4 c00 = to_working_colorspace( tex2D(_MainTex, uv - ss_offset11) );
-		float4 c10 = to_working_colorspace( tex2D(_MainTex, uv - ss_offset01) );
-		float4 c01 = to_working_colorspace( tex2D(_MainTex, uv + ss_offset01) );
-		float4 c11 = to_working_colorspace( tex2D(_MainTex, uv + ss_offset11) );
-
-		float4 cmin = min(c00, min(c10, min(c01, c11)));
-		float4 cmax = max(c00, max(c10, max(c01, c11)));
-
-		#if USE_CHROMA_COLORSPACE || USE_CLIPPING
-			float4 cavg = (c00 + c10 + c01 + c11) / 4.0;
-		#endif
-
-	#else
-		#error "missing keyword MINMAX_..."
+	#if USE_CHROMA_COLORSPACE || USE_CLIPPING
+		float4 cavg = (csum5 + ctl + ctr + cbl + cbr) / 9.0;
 	#endif
+	
+	#if USE_AABB_ROUNDING
+		cmin = 0.5 * (cmin + cmin5);
+		cmax = 0.5 * (cmax + cmax5);
+		#if USE_CLIPPING
+		cavg = 0.5 * (cavg + 0.2 * csum5);
+		#endif
+	#endif
+		
+	#if USE_VARIANCE_CLIPPING
+	//note: salvi variance-clipping
+	{
+		const float3 w = float3(1.0/16.0, 2.0/16.0, 4.0/16.0);
+
+		float4 colorAvg = w.z*cmc;
+		float4 colorVar = w.z*cmc*cmc;
+		colorAvg += w.x * ctl; colorVar += w.x * ctl * ctl;
+		colorAvg += w.y * ctc; colorVar += w.y * ctc * ctc;
+		colorAvg += w.x * ctr; colorVar += w.x * ctr * ctr;
+		colorAvg += w.y * cml; colorVar += w.y * cml * cml;
+		//colorAvg += w.z * cmc; colorVar += w.z * cmc * cmc;
+		colorAvg += w.y * cmr; colorVar += w.y * cmr * cmr;
+		colorAvg += w.x * cbl; colorVar += w.x * cbl * cbl;
+		colorAvg += w.y * cbc; colorVar += w.y * cbc * cbc;
+		colorAvg += w.x * cbr; colorVar += w.x * cbr * cbr;
+
+		float4 dev = sqrt(max(float4(0,0,0,0), colorVar - colorAvg*colorAvg));
+
+		const float gColorBoxSigma = 1.0; //TODO: expose [0.75;1.25]
+		cmin = max(cmin, colorAvg - gColorBoxSigma * dev );
+		cmax = min(cmax, colorAvg + gColorBoxSigma * dev );
+	}
+		
+	#endif //USE_VARIANCE_CLIPPING
 
 		//note: shrink chroma min-max
 		#if USE_CHROMA_COLORSPACE
-		float2 chroma_extent = 0.25 * 0.5 * (cmax.x - cmin.x);
+		float2 chroma_extent = 0.25 * 0.5 * (cmax.xx - cmin.xx);
 		float2 chroma_center = texel0.yz;
 		float2 ccmin = chroma_center - chroma_extent;
 		float2 ccmax = chroma_center + chroma_extent;
@@ -291,16 +289,19 @@ Shader "Playdead/Post/TemporalReprojection"
 		{
 			cmin.yz = ccmin;
 			cmax.yz = ccmax;
+			#if USE_CLIPPING
 			cavg.yz = chroma_center;
+			#endif
 		}
-		#endif
+		#endif //USE_CHROMA_COLORSPACE
 
 		// clamp to neighbourhood of current sample
-	#if USE_CLIPPING
-		texel1 = clip_aabb(cmin.xyz, cmax.xyz, clamp(cavg, cmin, cmax), texel1);
-	#else
+		#if USE_CLIPPING
+		texel1 = clip_aabb(cmin.xyz, cmax.xyz, clamp(cavg, cmin, cmax), texel1); 
+		#else
 		texel1 = clamp(texel1, cmin, cmax);
-	#endif
+		#endif
+
 
 		// feedback weight from unbiased luminance diff (t.lottes)
 	#if USE_CHROMA_COLORSPACE
@@ -319,7 +320,7 @@ Shader "Playdead/Post/TemporalReprojection"
 		float unbiased_weight = 1.0 - unbiased_diff;
 		float unbiased_weight_sqr = unbiased_weight * unbiased_weight;
 		float k_feedback = _FeedbackMin + unbiased_weight_sqr * _FeedbackMinMax;
-
+		
 		// output
 		return lerp(texel0, texel1, k_feedback);
 	}
@@ -380,9 +381,7 @@ Shader "Playdead/Post/TemporalReprojection"
 
 		#if UNJITTER_COLORSAMPLES
 			half4 color_motion = sample_color_motion( IN.ss_txc - _JitterUV.xy, ss_vel, rnd.xy-0.5h);
-			//float4 color_motion = sample_color_motion(_MainTex, IN.ss_txc - _JitterUV.xy, ss_vel);
 		#else
-			//float4 color_motion = sample_color_motion(_MainTex, IN.ss_txc, ss_vel);
 			half4 color_motion = sample_color_motion( IN.ss_txc, ss_vel, rnd.xy-0.5h);
 		#endif
 
