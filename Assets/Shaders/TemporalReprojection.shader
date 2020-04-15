@@ -252,7 +252,7 @@ Shader "Playdead/Post/TemporalReprojection"
 		cavg = 0.5 * (cavg + 0.2 * csum5);
 		#endif
 	#endif
-		
+
 	#if USE_VARIANCE_CLIPPING
 	//note: salvi variance-clipping
 	{
@@ -270,13 +270,14 @@ Shader "Playdead/Post/TemporalReprojection"
 		colorAvg += w.y * cbc; colorVar += w.y * cbc * cbc;
 		colorAvg += w.x * cbr; colorVar += w.x * cbr * cbr;
 
-		float4 dev = sqrt(max(float4(0,0,0,0), colorVar - colorAvg*colorAvg));
-
+		float4 dev = sqrt(max(FLT_EPS, colorVar - colorAvg*colorAvg));
 		const float gColorBoxSigma = 1.0; //TODO: expose [0.75;1.25]
 		cmin = max(cmin, colorAvg - gColorBoxSigma * dev );
 		cmax = min(cmax, colorAvg + gColorBoxSigma * dev );
+		#if USE_CLIPPING
+		cavg = colorAvg;
+		#endif
 	}
-		
 	#endif //USE_VARIANCE_CLIPPING
 
 		//note: shrink chroma min-max
